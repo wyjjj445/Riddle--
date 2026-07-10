@@ -1,7 +1,5 @@
 # Riddle--
 
-> Write with your mouse. The page drinks your ink. Tom Riddle replies in a flowing hand — stroke by stroke.
-
 A browser-based reimagining of [MaximeRivest/riddle](https://github.com/MaximeRivest/riddle) — the magical diary of Tom Riddle. No e-ink hardware required. Just a browser, a pen (or mouse), and an API key.
 
 ## Riddle vs. Riddle--
