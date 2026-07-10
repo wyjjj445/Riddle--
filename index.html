@@ -431,7 +431,7 @@ function revealChar(ch, x, y, chW, fH) {
 }
 
 // Settings
-var DEFAULTS = window.HAUNTED_DIARY_CONFIG || {
+var DEFAULTS = window.RIDDLE_MINUS_CONFIG || {
   language: 'zh_CN',
   apiKey: '',
   apiBase: 'https://api.deepseek.com',
@@ -442,13 +442,13 @@ var DEFAULTS = window.HAUNTED_DIARY_CONFIG || {
 var settings = loadSettings();
 function loadSettings() {
   var saved;
-  try { saved = JSON.parse(localStorage.getItem('haunted-diary-settings')); } catch (e) {}
+  try { saved = JSON.parse(localStorage.getItem('riddle--settings')); } catch (e) {}
   // config.js values always win for apiKey/apiBase/model if they look real
-  var cfg = window.HAUNTED_DIARY_CONFIG || {};
+  var cfg = window.RIDDLE_MINUS_CONFIG || {};
   var merged = Object.assign({}, DEFAULTS, saved || {}, cfg);
   return merged;
 }
-function saveSettings() { localStorage.setItem('haunted-diary-settings', JSON.stringify(settings)); }
+function saveSettings() { localStorage.setItem('riddle--settings', JSON.stringify(settings)); }
 
 var langSelect = document.getElementById('langSelect');
 var apiKeyInput = document.getElementById('apiKey');

@@ -1,6 +1,6 @@
 // 配置文件模板。复制为 config.js 并填入你的 API Key。
 // config.js 不应提交到 Git。
-window.HAUNTED_DIARY_CONFIG = {
+window.RIDDLE_MINUS_CONFIG = {
   language: 'zh_CN',
   apiKey: 'sk-your-key-here',
   apiBase: 'https://api.deepseek.com',
