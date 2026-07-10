@@ -1,7 +1,5 @@
 # Riddle--
 
-> 写下你的字迹。纸面喝掉墨水。汤姆·里德尔用流畅的手写体一笔一画回写过来。
-
 [MaximeRivest/riddle](https://github.com/MaximeRivest/riddle) 的浏览器重生版。不需要 e-ink 硬件，一个浏览器、一支笔（或鼠标）、一个 API Key 就够了。
 
 ## 与 riddle 的差异
