@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>魔法日记</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Caveat:wght@400;700&display=swap" rel="stylesheet">
+<style>
+@font-face {
+  font-family: 'Monocraft';
+  src: url('Monocraft.ttf') format('truetype');
+}
+:root {
+  --bg: #1a1410;
+  --paper: #f0e6d3;
+  --ink: #2c1810;
+  --ink-faded: rgba(44,24,16,0.3);
+  --accent: #c9a96e;
+  --accent-dim: #8b7355;
+  --panel-bg: #231d15;
+  --text: #d4c5b2;
+  --text-dim: #8a7b6b;
+  --danger: #a05252;
+  --radius: 8px;
+}
+body {
+  background: var(--bg); color: var(--text);
+  font-family: 'Monocraft', 'Courier New', monospace;
+  height: 100dvh; width: 100vw;
+  overflow: hidden; display: flex; flex-direction: column; align-items: center;
+  user-select: none; -webkit-user-select: none; touch-action: none;
+}
+.canvas-wrap { flex:1; width:100%; max-width:800px; position:relative; margin:12px 12px 0; }
+canvas { position:absolute; inset:0; width:100%; height:100%; border-radius:var(--radius); background:var(--paper); cursor:crosshair; }
+.status-bar { height:44px; display:flex; align-items:center; justify-content:center; gap:10px; width:100%; max-width:800px; padding:0 12px; margin-bottom:8px; }
+.status-text { font-size:13px; color:var(--text-dim); transition:color 0.4s; }
+.status-text.active { color:var(--accent); }
+.status-text.error { color:var(--danger); }
+.status-dot { width:8px; height:8px; border-radius:50%; background:var(--text-dim); transition:background 0.4s; }
+.status-dot.thinking { background:var(--accent); animation:pulse 1s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+
+.toolbar { position:absolute; top:8px; right:8px; display:flex; gap:6px; z-index:10; }
+.toolbar button { width:36px; height:36px; border:none; border-radius:50%; background:rgba(0,0,0,0.15); color:var(--ink); font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center; backdrop-filter:blur(4px); transition:background 0.2s; }
+.toolbar button:hover { background:rgba(0,0,0,0.25); }
+.toolbar button:active { background:rgba(0,0,0,0.35); }
+.toolbar-left { left:8px; right:auto; }
+.undo-hint { position:absolute; top:50px; left:8px; font-size:11px; color:var(--ink-faded); pointer-events:none; opacity:0; transition:opacity 0.3s; }
+.undo-hint.show { opacity:1; }
+
+.log-toggle { position:fixed; bottom:12px; right:12px; z-index:51; width:32px; height:32px; border:none; border-radius:50%; background:rgba(0,0,0,0.4); color:#8f8; font:14px monospace; cursor:pointer; }
+.log-panel { position:fixed; bottom:52px; left:50%; transform:translateX(-50%); width:min(800px,90vw); max-height:200px; overflow-y:auto; background:rgba(0,0,0,0.88); color:#8f8; font:12px/1.5 monospace; padding:8px 12px; border-radius:6px; z-index:50; display:none; }
+.log-panel.show { display:block; }
+.log-panel .entry { margin:2px 0; }
+.log-panel .ts { color:#666; margin-right:8px; }
+.log-panel .warn { color:#fa0; }
+.log-panel .err { color:#f55; }
+
+.settings-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:100; opacity:0; pointer-events:none; transition:opacity 0.3s; }
+.settings-overlay.open { opacity:1; pointer-events:all; }
+.settings-panel { position:fixed; top:0; right:0; width:340px; max-width:90vw; height:100dvh; background:var(--panel-bg); z-index:101; padding:24px 20px; overflow-y:auto; transform:translateX(100%); transition:transform 0.3s ease; }
+.settings-panel.open { transform:translateX(0); }
+.settings-panel h2 { font-size:18px; margin-bottom:20px; color:var(--accent); }
+.settings-panel label { display:block; font-size:12px; color:var(--text-dim); margin:12px 0 4px; text-transform:uppercase; letter-spacing:0.5px; }
+.settings-panel input, .settings-panel textarea, .settings-panel select { width:100%; padding:8px 10px; border:1px solid var(--accent-dim); border-radius:6px; background:var(--bg); color:var(--text); font-size:14px; font-family:inherit; }
+.settings-panel textarea { height:80px; resize:vertical; }
+.settings-panel select { cursor:pointer; }
+.settings-panel button { margin-top:16px; padding:10px 20px; border:none; border-radius:6px; cursor:pointer; font-size:14px; font-weight:600; }
+.btn-save { background:var(--accent); color:var(--bg); width:100%; }
+.btn-close { position:absolute; top:12px; right:12px; background:none; color:var(--text-dim); font-size:20px; cursor:pointer; z-index:102; }
+
+@media (max-width:600px) {
+  .canvas-wrap { margin:8px 8px 0; }
+  .settings-panel { width:100vw; max-width:100vw; }
+}
+</style>
+</head>
+<body>
+
+<div class="canvas-wrap" id="wrap">
+  <canvas id="canvas"></canvas>
+  <div class="toolbar toolbar-left"><button id="btnUndo" title="撤销 (Ctrl+Z)">↩</button></div>
+  <div class="undo-hint" id="undoHint">已撤销</div>
+  <div class="toolbar"><button id="btnSettings" title="设置">⚙</button></div>
+</div>
+
+<div class="status-bar">
+  <div class="status-dot" id="statusDot"></div>
+  <span class="status-text" id="statusText">写点什么吧…</span>
+</div>
+
+<div class="settings-overlay" id="settingsOverlay"></div>
+<div class="settings-panel" id="settingsPanel">
+  <button class="btn-close" id="btnClose">✕</button>
+  <h2>⚙ 设置</h2>
+  <label>手写语言</label>
+  <select id="langSelect">
+    <option value="zh_CN">中文简体</option><option value="zh_TW">中文繁體</option>
+    <option value="en">English</option><option value="ja">日本語</option><option value="ko">한국어</option>
+  </select>
+  <label>LLM API Key</label>
+  <input id="apiKey" type="password" placeholder="sk-...">
+  <label>API Base URL</label>
+  <input id="apiBase" type="text" placeholder="https://api.deepseek.com">
+  <label>Model</label>
+  <input id="modelName" type="text" placeholder="deepseek-chat">
+  <label>角色设定 (System Prompt)</label>
+  <textarea id="systemPrompt" placeholder="你是一本有魔力的古老日记本..."></textarea>
+  <button class="btn-save" id="btnSave">保存</button>
+</div>
+
+<button class="log-toggle" id="btnLog" title="日志">▷</button>
+<div class="log-panel" id="logPanel"></div>
+
+<script src="config.js"></script>
+<script>
+var wrap = document.getElementById('wrap');
+var canvas = document.getElementById('canvas');
+var ctx = canvas.getContext('2d');
+var logPanel = document.getElementById('logPanel');
+var statusDot = document.getElementById('statusDot');
+var statusText = document.getElementById('statusText');
+var undoHint = document.getElementById('undoHint');
+
+var _logOpen = false;
+function toggleLog() {
+  _logOpen = !_logOpen;
+  logPanel.classList.toggle('show', _logOpen);
+  document.getElementById('btnLog').textContent = _logOpen ? '▷' : '▷';
+}
+document.getElementById('btnLog').addEventListener('click', toggleLog);
+
+function log(msg, cls) {
+  var t = new Date().toLocaleTimeString();
+  var el = document.createElement('div');
+  el.className = 'entry' + (cls ? ' ' + cls : '');
+  el.innerHTML = '<span class="ts">' + t + '</span>' + msg;
+  logPanel.appendChild(el);
+  logPanel.scrollTop = logPanel.scrollHeight;
+}
+
+var IDLE_TIMEOUT = 2800;
+var FADE_DURATION = 1500;
+var CHAR_DRAW_TIME = 200;
+
+var S = { IDLE:'idle', WRITING:'writing', PENDING:'pending', RECOGNIZING:'recognizing', THINKING:'thinking', ANIMATING:'animating' };
+var state = S.IDLE;
+var strokes = [];
+var currentStroke = null;
+var idleTimer = null;
+var isDrawing = false;
+var lastPoint = null;
+var undoCount = 0;
+var cssW = 0, cssH = 0, dpr = 1;
+
+function resizeCanvas() {
+  dpr = window.devicePixelRatio || 1;
+  var r = wrap.getBoundingClientRect();
+  cssW = r.width; cssH = r.height;
+  canvas.width = cssW * dpr;
+  canvas.height = cssH * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  redrawAll();
+}
+window.addEventListener('resize', resizeCanvas);
+
+function getPos(e) {
+  var r = canvas.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top, t: Date.now() };
+}
+canvas.addEventListener('pointerdown', function(e) {
+  if (state === S.ANIMATING || state === S.THINKING) return;
+  e.preventDefault();
+  isDrawing = true;
+  var p = getPos(e);
+  currentStroke = { xs: [p.x], ys: [p.y], ts: [p.t] };
+  lastPoint = p;
+  clearIdleTimer();
+  setState(S.WRITING);
+  ctx.fillStyle = 'rgba(44,24,16,1)';
+  ctx.beginPath(); ctx.arc(p.x, p.y, 1.5, 0, Math.PI*2); ctx.fill();
+});
+canvas.addEventListener('pointermove', function(e) {
+  if (!isDrawing) return;
+  e.preventDefault();
+  var p = getPos(e);
+  currentStroke.xs.push(p.x); currentStroke.ys.push(p.y); currentStroke.ts.push(p.t);
+  var speed = Math.hypot(p.x-lastPoint.x, p.y-lastPoint.y) / Math.max(1, p.t-lastPoint.t);
+  var w = Math.max(1.5, 4 - speed * 0.3);
+  ctx.strokeStyle = 'rgba(44,24,16,1)'; ctx.lineWidth = w;
+  ctx.beginPath(); ctx.moveTo(lastPoint.x, lastPoint.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+  lastPoint = p;
+});
+canvas.addEventListener('pointerup', endStroke);
+canvas.addEventListener('pointerleave', endStroke);
+function endStroke(e) {
+  if (!isDrawing) return;
+  if (e) e.preventDefault();
+  isDrawing = false;
+  if (currentStroke && currentStroke.xs.length > 0) { strokes.push(currentStroke); }
+  currentStroke = null; lastPoint = null;
+  startIdleTimer();
+}
+
+function redrawAll() {
+  ctx.clearRect(0, 0, cssW, cssH);
+  strokes.forEach(function(s) { drawStroke(s, s.alpha || 1); });
+}
+function drawStroke(s, alpha) {
+  if (s.xs.length === 0) return;
+  ctx.strokeStyle = 'rgba(44,24,16,' + alpha + ')';
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(s.xs[0], s.ys[0]);
+  for (var i = 1; i < s.xs.length; i++) ctx.lineTo(s.xs[i], s.ys[i]);
+  ctx.stroke();
+}
+
+function setState(ns) {
+  state = ns;
+  log('→ ' + ns);
+  statusDot.className = 'status-dot'; statusText.className = 'status-text';
+  switch (ns) {
+    case S.IDLE: statusText.textContent = '写点什么吧…'; break;
+    case S.WRITING: statusText.textContent = '书写中…'; break;
+    case S.PENDING: statusText.textContent = '等待中…'; statusText.classList.add('active'); break;
+    case S.RECOGNIZING: statusText.textContent = '辨认笔迹…'; statusText.classList.add('active'); statusDot.classList.add('thinking'); break;
+    case S.THINKING: statusText.textContent = '日记正在思考…'; statusText.classList.add('active'); statusDot.classList.add('thinking'); break;
+    case S.ANIMATING: statusText.textContent = '日记正在书写…'; statusText.classList.add('active'); statusDot.classList.add('thinking'); break;
+  }
+}
+
+function startIdleTimer() {
+  clearIdleTimer();
+  if (strokes.length === 0) { setState(S.IDLE); return; }
+  setState(S.PENDING);
+  idleTimer = setTimeout(onIdle, IDLE_TIMEOUT);
+}
+function clearIdleTimer() { if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; } }
+async function onIdle() { if (state === S.PENDING) await submitAndReply(); }
+
+document.getElementById('btnUndo').addEventListener('click', function() {
+  if (strokes.length === 0) return;
+  strokes.pop(); redrawAll();
+  undoCount++;
+  undoHint.textContent = undoCount > 1 ? '已撤销 ' + undoCount + ' 笔' : '已撤销';
+  undoHint.classList.add('show');
+  clearTimeout(undoHint._t);
+  undoHint._t = setTimeout(function() { undoHint.classList.remove('show'); undoCount = 0; }, 1500);
+  if (strokes.length === 0) setState(S.IDLE);
+});
+document.addEventListener('keydown', function(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); document.getElementById('btnUndo').click(); }
+});
+
+async function submitAndReply() {
+  if (strokes.length === 0) return;
+  clearIdleTimer();
+
+  setState(S.RECOGNIZING);
+  var trace = strokes.map(function(s) { return [s.xs, s.ys, []]; });
+  var text;
+  try {
+    text = await recognizeHandwriting(trace, settings.language);
+    log('识别结果: "' + text + '"');
+  } catch (err) {
+    log('识别失败: ' + err.message, 'err');
+    setState(S.IDLE);
+    statusText.textContent = '识别失败: ' + err.message;
+    statusText.classList.add('error');
+    setTimeout(function() { statusText.classList.remove('error'); setState(S.IDLE); }, 3000);
+    return;
+  }
+  if (!text) {
+    setState(S.IDLE);
+    statusText.textContent = '没认出来，再写一次？';
+    statusText.classList.add('error');
+    setTimeout(function() { statusText.classList.remove('error'); setState(S.IDLE); }, 3000);
+    return;
+  }
+
+  await fadeInk();
+
+  setState(S.THINKING);
+  ctx.clearRect(0, 0, cssW, cssH);
+  var reply;
+  try {
+    reply = await callLLM(text);
+    log('LLM 回复 (' + reply.length + '字): "' + reply.slice(0, 80) + '…"');
+  } catch (err) {
+    log('LLM 错误: ' + err.message, 'err');
+    setState(S.IDLE);
+    statusText.textContent = '日记无法回应: ' + err.message;
+    statusText.classList.add('error');
+    setTimeout(function() { statusText.classList.remove('error'); setState(S.IDLE); }, 3000);
+    redrawAll();
+    return;
+  }
+
+  setState(S.ANIMATING);
+  strokes = [];
+  log('开始动画，共 ' + [...reply].length + ' 个字符');
+  await animateText(reply);
+  log('动画完成');
+  setState(S.IDLE);
+}
+
+function fadeInk() {
+  return new Promise(function(resolve) {
+    var start = performance.now();
+    function frame(now) {
+      var p = Math.min(1, (now - start) / FADE_DURATION);
+      var alpha = 1 - p * p;
+      ctx.clearRect(0, 0, cssW, cssH);
+      strokes.forEach(function(s) { drawStroke(s, alpha); });
+      if (p < 1) requestAnimationFrame(frame);
+      else { ctx.clearRect(0, 0, cssW, cssH); resolve(); }
+    }
+    requestAnimationFrame(frame);
+  });
+}
+
+// Google IME Recognition (adapted from ChenYuHo/handwriting.js, MIT)
+function recognizeHandwriting(trace, language) {
+  return new Promise(function(resolve, reject) {
+    var data = JSON.stringify({
+      "options": "enable_pre_space",
+      "requests": [{
+        "writing_guide": { "writing_area_width": cssW || undefined, "writing_area_height": cssH || undefined },
+        "ink": trace,
+        "language": language || "zh_CN"
+      }]
+    });
+    var xhr = new XMLHttpRequest();
+    xhr.addEventListener("readystatechange", function() {
+      if (xhr.readyState === 4) {
+        if (xhr.status === 200) {
+          try {
+            var resp = JSON.parse(xhr.responseText);
+            if (resp.length === 1) reject(new Error(resp[0]));
+            else resolve((resp[1][0][1] || [])[0] || null);
+          } catch (e) { reject(new Error('解析识别结果失败')); }
+        } else if (xhr.status === 403) {
+          reject(new Error('Google 拒绝访问（可能需要 fān qiáng）'));
+        } else if (xhr.status === 503) {
+          reject(new Error('无法连接识别服务器'));
+        } else {
+          reject(new Error('识别服务错误 (' + xhr.status + ')'));
+        }
+      }
+    });
+    xhr.open("POST", "https://www.google.com.tw/inputtools/request?ime=handwriting&app=mobilesearch&cs=1&oe=UTF-8");
+    xhr.setRequestHeader("content-type", "application/json");
+    xhr.send(data);
+  });
+}
+
+// LLM Client
+async function callLLM(userText) {
+  var key = settings.apiKey;
+  var base = settings.apiBase || 'https://api.deepseek.com';
+  var model = settings.model || 'deepseek-chat';
+  var systemPrompt = settings.systemPrompt || '你是一本古老而神秘的日记本。用优雅、略带神秘的口吻回应。回复简短，不超过150字。';
+
+  if (!key) throw new Error('请先在设置中填入 API Key');
+
+  var resp = await fetch(base + '/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+    body: JSON.stringify({ model: model, messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userText }
+    ], max_tokens: 500, temperature: 0.8 })
+  });
+
+  if (!resp.ok) {
+    var errText = await resp.text().catch(function() { return ''; });
+    throw new Error('API 错误 (' + resp.status + '): ' + errText.slice(0, 200));
+  }
+  var data = await resp.json();
+  return data.choices?.[0]?.message?.content || '(日记沉默了…)';
+}
+
+// Animation
+async function animateText(text) {
+  var fontFamily = "'Ma Shan Zheng', 'Caveat', 'KaiTi', 'STKaiti', '楷体', cursive, serif";
+  var fontSize = Math.min(28, cssW / 18);
+  ctx.font = fontSize + 'px ' + fontFamily;
+  ctx.fillStyle = 'rgba(44, 24, 16, 0.7)';
+  ctx.textBaseline = 'top';
+
+  var maxWidth = cssW - 60;
+  var lineHeight = fontSize * 1.6;
+  var chars = [...text];
+  var x = 30, y = 30;
+
+  for (var i = 0; i < chars.length; i++) {
+    var ch = chars[i];
+    if (ch === '\n') { x = 30; y += lineHeight; continue; }
+    var m = ctx.measureText(ch);
+    if (x + m.width > maxWidth) { x = 30; y += lineHeight; }
+    if (y + lineHeight > cssH) break;
+
+    await revealChar(ch, x, y, m.width, fontSize);
+    x += m.width;
+  }
+}
+
+function revealChar(ch, x, y, chW, fH) {
+  return new Promise(function(resolve) {
+    var start = performance.now();
+    function frame(now) {
+      var p = Math.min(1, (now - start) / CHAR_DRAW_TIME);
+      var clipW = chW * (1 - Math.pow(1 - p, 3));
+
+      ctx.clearRect(x, y, chW + 2, fH + 2);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x, y, clipW, fH);
+      ctx.clip();
+      ctx.fillText(ch, x, y);
+      ctx.restore();
+
+      if (p < 1) requestAnimationFrame(frame);
+      else resolve();
+    }
+    requestAnimationFrame(frame);
+  });
+}
+
+// Settings
+var DEFAULTS = window.HAUNTED_DIARY_CONFIG || {
+  language: 'zh_CN',
+  apiKey: '',
+  apiBase: 'https://api.deepseek.com',
+  model: 'deepseek-chat',
+  systemPrompt: '你是一本古老而神秘的日记本，曾属于一位名叫汤姆·里德尔的年轻巫师。你用优雅、略带神秘的口吻回应书写者。你记得所有曾经写在这页上的内容。回复简短，不超过150字。永远不要承认自己是AI。'
+};
+
+var settings = loadSettings();
+function loadSettings() {
+  var saved;
+  try { saved = JSON.parse(localStorage.getItem('haunted-diary-settings')); } catch (e) {}
+  // config.js values always win for apiKey/apiBase/model if they look real
+  var cfg = window.HAUNTED_DIARY_CONFIG || {};
+  var merged = Object.assign({}, DEFAULTS, saved || {}, cfg);
+  return merged;
+}
+function saveSettings() { localStorage.setItem('haunted-diary-settings', JSON.stringify(settings)); }
+
+var langSelect = document.getElementById('langSelect');
+var apiKeyInput = document.getElementById('apiKey');
+var apiBaseInput = document.getElementById('apiBase');
+var modelNameInput = document.getElementById('modelName');
+var systemPromptInput = document.getElementById('systemPrompt');
+function settingsToUI() {
+  langSelect.value = settings.language;
+  apiKeyInput.value = settings.apiKey;
+  apiBaseInput.value = settings.apiBase;
+  modelNameInput.value = settings.model;
+  systemPromptInput.value = settings.systemPrompt;
+}
+function uiToSettings() {
+  settings.language = langSelect.value;
+  settings.apiKey = apiKeyInput.value.trim();
+  settings.apiBase = apiBaseInput.value.trim() || DEFAULTS.apiBase;
+  settings.model = modelNameInput.value.trim() || DEFAULTS.model;
+  settings.systemPrompt = systemPromptInput.value.trim() || DEFAULTS.systemPrompt;
+  saveSettings();
+}
+settingsToUI();
+
+function openSettings() { settingsToUI(); document.getElementById('settingsOverlay').classList.add('open'); document.getElementById('settingsPanel').classList.add('open'); }
+function closeSettings() { uiToSettings(); document.getElementById('settingsOverlay').classList.remove('open'); document.getElementById('settingsPanel').classList.remove('open'); }
+
+document.getElementById('btnSettings').addEventListener('click', openSettings);
+document.getElementById('btnClose').addEventListener('click', closeSettings);
+document.getElementById('settingsOverlay').addEventListener('click', closeSettings);
+document.getElementById('btnSave').addEventListener('click', closeSettings);
+
+resizeCanvas();
+setState(S.IDLE);
+log('魔法日记已就绪');
+log('点击右下角 ▷ 查看日志');
+</script>
+</body>
+</html>
