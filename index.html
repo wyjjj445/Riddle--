@@ -77,6 +77,10 @@ canvas { position:absolute; inset:0; width:100%; height:100%; border-radius:var(
   .canvas-wrap { margin:8px 8px 0; }
   .settings-panel { width:100vw; max-width:100vw; }
 }
+.speed-row { display:flex; align-items:center; gap:6px; margin-top:4px; font-family:system-ui,sans-serif; }
+.speed-row button { width:28px; height:28px; border:1px solid var(--accent-dim); border-radius:6px; background:var(--bg); color:var(--text); font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+.speed-row button:hover { background:var(--accent-dim); color:var(--bg); }
+.speed-val { font-size:14px; min-width:50px; text-align:center; color:var(--accent); }
 </style>
 </head>
 <body>
@@ -102,6 +106,29 @@ canvas { position:absolute; inset:0; width:100%; height:100%; border-radius:var(
     <option value="zh_CN">中文简体</option><option value="zh_TW">中文繁體</option>
     <option value="en">English</option><option value="ja">日本語</option><option value="ko">한국어</option>
   </select>
+  <label>字体大小</label>
+  <select id="fontSizeSelect">
+    <option value="20">20px</option><option value="24">24px</option>
+    <option value="28" selected>28px</option><option value="32">32px</option>
+    <option value="36">36px</option><option value="42">42px</option><option value="48">48px</option>
+  </select>
+  <label>回复字体</label>
+  <select id="fontSelect">
+    <option value="'Ma Shan Zheng', 'KaiTi', 'STKaiti', '楷体', cursive">马善政 (中文手写)</option>
+    <option value="'Caveat', 'Comic Sans MS', cursive">Caveat (英文手写)</option>
+    <option value="'KaiTi', 'STKaiti', '楷体', serif">楷体</option>
+    <option value="'SimSun', '宋体', serif">宋体</option>
+    <option value="'Microsoft YaHei', '微软雅黑', sans-serif">微软雅黑</option>
+    <option value="'Noto Serif SC', 'SimSun', serif">Noto Serif SC</option>
+    <option value="'ZCOOL XiaoWei', 'KaiTi', serif">ZCOOL XiaoWei</option>
+    <option value="serif">衬线 (serif)</option>
+    <option value="sans-serif">无衬线 (sans-serif)</option>
+  </select>
+  <label>显示速度</label>
+  <div class="speed-row">
+    <button id="btnSpeedDown" title="减慢">−</button>
+    <button id="btnSpeedUp" title="加快">+</button>
+  </div>
   <label>LLM API Key</label>
   <input id="apiKey" type="password" placeholder="sk-...">
   <label>API Base URL</label>
@@ -145,7 +172,6 @@ function log(msg, cls) {
 
 var IDLE_TIMEOUT = 2800;
 var FADE_DURATION = 1500;
-var CHAR_DRAW_TIME = 200;
 
 var S = { IDLE:'idle', WRITING:'writing', PENDING:'pending', RECOGNIZING:'recognizing', THINKING:'thinking', ANIMATING:'animating' };
 var state = S.IDLE;
@@ -283,6 +309,8 @@ async function submitAndReply() {
     return;
   }
 
+  // capture ink bounding box before fade
+  var inkBounds = getInkBounds();
   await fadeInk();
 
   setState(S.THINKING);
@@ -304,19 +332,26 @@ async function submitAndReply() {
   setState(S.ANIMATING);
   strokes = [];
   log('开始动画，共 ' + [...reply].length + ' 个字符');
-  await animateText(reply);
+  await animateText(reply, inkBounds);
   log('动画完成');
   setState(S.IDLE);
 }
 
 function fadeInk() {
+  // snapshot entire canvas (strokes + old reply)
+  var snap = document.createElement('canvas');
+  snap.width = canvas.width; snap.height = canvas.height;
+  snap.getContext('2d').drawImage(canvas, 0, 0);
+
   return new Promise(function(resolve) {
     var start = performance.now();
     function frame(now) {
       var p = Math.min(1, (now - start) / FADE_DURATION);
       var alpha = 1 - p * p;
       ctx.clearRect(0, 0, cssW, cssH);
-      strokes.forEach(function(s) { drawStroke(s, alpha); });
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(snap, 0, 0, cssW, cssH);
+      ctx.globalAlpha = 1;
       if (p < 1) requestAnimationFrame(frame);
       else { ctx.clearRect(0, 0, cssW, cssH); resolve(); }
     }
@@ -382,45 +417,115 @@ async function callLLM(userText) {
     throw new Error('API 错误 (' + resp.status + '): ' + errText.slice(0, 200));
   }
   var data = await resp.json();
+
   return data.choices?.[0]?.message?.content || '(日记沉默了…)';
 }
 
-// Animation
-async function animateText(text) {
-  var fontFamily = "'Ma Shan Zheng', 'Caveat', 'KaiTi', 'STKaiti', '楷体', cursive, serif";
-  var fontSize = Math.min(28, cssW / 18);
-  ctx.font = fontSize + 'px ' + fontFamily;
-  ctx.fillStyle = 'rgba(44, 24, 16, 0.7)';
-  ctx.textBaseline = 'top';
-
-  var maxWidth = cssW - 60;
-  var lineHeight = fontSize * 1.6;
-  var chars = [...text];
-  var x = 30, y = 30;
-
-  for (var i = 0; i < chars.length; i++) {
-    var ch = chars[i];
-    if (ch === '\n') { x = 30; y += lineHeight; continue; }
-    var m = ctx.measureText(ch);
-    if (x + m.width > maxWidth) { x = 30; y += lineHeight; }
-    if (y + lineHeight > cssH) break;
-
-    await revealChar(ch, x, y, m.width, fontSize);
-    x += m.width;
+function getInkBounds() {
+  var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (var i = 0; i < strokes.length; i++) {
+    var s = strokes[i];
+    for (var j = 0; j < s.xs.length; j++) {
+      if (s.xs[j] < minX) minX = s.xs[j];
+      if (s.xs[j] > maxX) maxX = s.xs[j];
+      if (s.ys[j] < minY) minY = s.ys[j];
+      if (s.ys[j] > maxY) maxY = s.ys[j];
+    }
   }
+  if (minX === Infinity) return null;
+  return { minX: minX, minY: minY, maxX: maxX, maxY: maxY };
 }
 
+// Animation
+async function animateText(text, inkBounds) {
+  var fontFamily = settings.fontFamily || DEFAULTS.fontFamily;
+  var fontSize = settings.fontSize || DEFAULTS.fontSize;
+  // ensure text fits: scale down if font too large for canvas
+  var minDim = Math.min(cssW, cssH);
+  if (fontSize > minDim * 0.15) fontSize = Math.floor(minDim * 0.15);
+  if (fontSize > cssW / 10) fontSize = Math.floor(cssW / 10);
+
+  ctx.font = fontSize + 'px ' + fontFamily;
+  ctx.fillStyle = 'rgba(44, 24, 16, 0.7)';
+  ctx.textBaseline = 'middle';
+
+  var margin = 40;
+  var maxWidth = cssW - margin * 2;
+  var lineHeight = fontSize * 1.6;
+  var chars = [...text];
+
+  // --- first pass: compute lines ---
+  var lines = [];
+  var curLine = '';
+  for (var i = 0; i < chars.length; i++) {
+    var ch = chars[i];
+    if (ch === '\n') { lines.push(curLine); curLine = ''; continue; }
+    var testLine = curLine + ch;
+    if (ctx.measureText(testLine).width > maxWidth && curLine.length > 0) {
+      lines.push(curLine);
+      curLine = ch;
+    } else {
+      curLine = testLine;
+    }
+  }
+  if (curLine) lines.push(curLine);
+
+  var textHeight = lines.length * lineHeight;
+
+  // --- decide vertical position: avoid ink area ---
+  var y;
+  if (inkBounds) {
+    var pad = fontSize * 0.8;
+    var inkTop = inkBounds.minY - pad;
+    var inkBot = inkBounds.maxY + pad;
+    var spaceAbove = inkTop - margin;
+    var spaceBelow = cssH - inkBot - margin;
+    if (textHeight <= spaceAbove) {
+      // above ink
+      y = Math.max(margin, inkTop - textHeight);
+    } else if (textHeight <= spaceBelow) {
+      // below ink
+      y = inkBot;
+    } else if (spaceAbove >= spaceBelow) {
+      // use larger space (may clip)
+      y = Math.max(margin, inkTop - textHeight);
+    } else {
+      y = inkBot;
+    }
+  } else {
+    y = Math.max(margin, (cssH - textHeight) / 2);
+  }
+  if (y < margin) y = margin;
+
+  // --- second pass: draw centered ---
+  for (var li = 0; li < lines.length; li++) {
+    var line = lines[li];
+    var lineW = ctx.measureText(line).width;
+    var x = Math.max(margin, (cssW - lineW) / 2);
+    var drawY = y + lineHeight / 2;
+    if (y + lineHeight > cssH) break;
+
+    for (var ci = 0; ci < line.length; ci++) {
+      var ch2 = line[ci];
+      var chW = ctx.measureText(ch2).width;
+      await revealChar(ch2, x, drawY, chW, fontSize);
+      x += chW;
+    }
+    y += lineHeight;
+  }
+}
 function revealChar(ch, x, y, chW, fH) {
   return new Promise(function(resolve) {
     var start = performance.now();
+    var top = y - fH / 2;
     function frame(now) {
-      var p = Math.min(1, (now - start) / CHAR_DRAW_TIME);
+      var p = Math.min(1, (now - start) / settings.charDrawTime);
       var clipW = chW * (1 - Math.pow(1 - p, 3));
 
-      ctx.clearRect(x, y, chW + 2, fH + 2);
+      ctx.clearRect(x, top, chW + 2, fH + 2);
       ctx.save();
       ctx.beginPath();
-      ctx.rect(x, y, clipW, fH);
+      ctx.rect(x, top, clipW, fH);
       ctx.clip();
       ctx.fillText(ch, x, y);
       ctx.restore();
@@ -432,37 +537,140 @@ function revealChar(ch, x, y, chW, fH) {
   });
 }
 
+
+// font/size change → live preview
+
 // Settings
-var DEFAULTS = window.RIDDLE_MINUS_CONFIG || {
+var DEFAULTS = {
   language: 'zh_CN',
   apiKey: '',
   apiBase: 'https://api.deepseek.com',
   model: 'deepseek-chat',
-  systemPrompt: '你是一本古老而神秘的日记本，曾属于一位名叫汤姆·里德尔的年轻巫师。你用优雅、略带神秘的口吻回应书写者。你记得所有曾经写在这页上的内容。回复简短，不超过150字。永远不要承认自己是AI。'
+  systemPrompt: '你是一本古老而神秘的日记本，曾属于一位名叫汤姆·里德尔的年轻巫师。你用优雅、略带神秘的口吻回应书写者。你记得所有曾经写在这页上的内容。回复简短，不超过150字。永远不要承认自己是AI。',
+  fontFamily: "'Ma Shan Zheng', 'KaiTi', 'STKaiti', '楷体', cursive",
+  fontSize: 28,
+  charDrawTime: 200
 };
+// merge config.js on top
+var _cfg = window.RIDDLE_MINUS_CONFIG || {};
+if (_cfg.fontFamily) DEFAULTS.fontFamily = _cfg.fontFamily;
+if (_cfg.fontSize) DEFAULTS.fontSize = _cfg.fontSize;
+if (_cfg.charDrawTime != null) DEFAULTS.charDrawTime = _cfg.charDrawTime;
 
-var settings = loadSettings();
 function loadSettings() {
   var saved;
   try { saved = JSON.parse(localStorage.getItem('riddle--settings')); } catch (e) {}
-  // config.js values always win for apiKey/apiBase/model if they look real
   var cfg = window.RIDDLE_MINUS_CONFIG || {};
-  var merged = Object.assign({}, DEFAULTS, saved || {}, cfg);
-  return merged;
+  return Object.assign({}, DEFAULTS, saved || {}, cfg);
 }
 function saveSettings() { localStorage.setItem('riddle--settings', JSON.stringify(settings)); }
 
+var settings = loadSettings();
+var SPEED_STEPS = [50, 100, 150, 200, 300, 400, 500];
+var _previewPlaying = false;
+
+function updateSpeedUI() {
+  if (SPEED_STEPS.indexOf(settings.charDrawTime) === -1) {
+    settings.charDrawTime = DEFAULTS.charDrawTime;
+  }
+}
+function previewOnCanvas() {
+  if (_previewPlaying) return;
+  _previewPlaying = true;
+  // save current canvas
+  var snap = document.createElement('canvas');
+  snap.width = canvas.width; snap.height = canvas.height;
+  snap.getContext('2d').drawImage(canvas, 0, 0);
+  // play preview
+  ctx.clearRect(0, 0, cssW, cssH);
+  animateText('Hello 你好', null).then(function() {
+    _previewPlaying = false;
+  });
+}
+var btnSpeedDown = document.getElementById('btnSpeedDown');
+var btnSpeedUp = document.getElementById('btnSpeedUp');
+btnSpeedDown.addEventListener('click', function() {
+  var idx = SPEED_STEPS.indexOf(settings.charDrawTime);
+  if (idx < SPEED_STEPS.length - 1) { settings.charDrawTime = SPEED_STEPS[idx + 1]; updateSpeedUI(); saveSettings(); previewOnCanvas(); }
+});
+btnSpeedUp.addEventListener('click', function() {
+  var idx = SPEED_STEPS.indexOf(settings.charDrawTime);
+  if (idx > 0) { settings.charDrawTime = SPEED_STEPS[idx - 1]; updateSpeedUI(); saveSettings(); previewOnCanvas(); }
+});
+
+// --- load system fonts ---
+var _sysFontsLoaded = false;
+async function loadSystemFonts() {
+  if (_sysFontsLoaded) return;
+  if (!('queryLocalFonts' in window)) {
+    alert('此浏览器不支持系统字体查询（需要 Chrome 103+）');
+    return;
+  }
+  try {
+    var fonts = await window.queryLocalFonts();
+    var seen = {};
+    var added = 0;
+    // add separator
+    var sep = document.createElement('option');
+    sep.disabled = true;
+    sep.textContent = '── 系统字体 ──';
+    fontSelect.appendChild(sep);
+    for (var i = 0; i < fonts.length; i++) {
+      var name = fonts[i].family;
+      if (seen[name]) continue;
+      seen[name] = true;
+      if (/icon|symbol|dingbat|emoji|barcode/i.test(name)) continue;
+      var opt = document.createElement('option');
+      opt.value = name + ', serif';
+      opt.textContent = name;
+      fontSelect.appendChild(opt);
+      added++;
+    }
+    if (added > 0) {
+      _sysFontsLoaded = true;
+      log('已加载 ' + added + ' 个系统字体');
+    }
+  } catch (e) {
+    log('加载系统字体失败: ' + e.message, 'err');
+    alert('需要授予字体访问权限（浏览器会弹出权限提示）');
+  }
+}
 var langSelect = document.getElementById('langSelect');
 var apiKeyInput = document.getElementById('apiKey');
 var apiBaseInput = document.getElementById('apiBase');
 var modelNameInput = document.getElementById('modelName');
 var systemPromptInput = document.getElementById('systemPrompt');
+var fontSelect = document.getElementById('fontSelect');
+var fontSizeSelect = document.getElementById('fontSizeSelect');
+
+// font/size change → live preview on main canvas
+fontSelect.addEventListener('change', function() {
+  settings.fontFamily = fontSelect.value;
+  saveSettings();
+  previewOnCanvas();
+});
+fontSizeSelect.addEventListener('change', function() {
+  settings.fontSize = parseInt(fontSizeSelect.value);
+  saveSettings();
+  previewOnCanvas();
+});
+
 function settingsToUI() {
   langSelect.value = settings.language;
   apiKeyInput.value = settings.apiKey;
   apiBaseInput.value = settings.apiBase;
   modelNameInput.value = settings.model;
   systemPromptInput.value = settings.systemPrompt;
+  // try to match saved font; fall back to first option if not found
+  var opts = fontSelect.options;
+  var matched = false;
+
+  for (var i = 0; i < opts.length; i++) {
+    if (opts[i].value === settings.fontFamily) { fontSelect.selectedIndex = i; matched = true; break; }
+  }
+  if (!matched) fontSelect.selectedIndex = 0;
+  fontSizeSelect.value = settings.fontSize;
+  updateSpeedUI();
 }
 function uiToSettings() {
   settings.language = langSelect.value;
@@ -470,12 +678,33 @@ function uiToSettings() {
   settings.apiBase = apiBaseInput.value.trim() || DEFAULTS.apiBase;
   settings.model = modelNameInput.value.trim() || DEFAULTS.model;
   settings.systemPrompt = systemPromptInput.value.trim() || DEFAULTS.systemPrompt;
+  settings.fontFamily = fontSelect.value || DEFAULTS.fontFamily;
+  settings.fontSize = parseInt(fontSizeSelect.value) || DEFAULTS.fontSize;
   saveSettings();
 }
 settingsToUI();
 
-function openSettings() { settingsToUI(); document.getElementById('settingsOverlay').classList.add('open'); document.getElementById('settingsPanel').classList.add('open'); }
-function closeSettings() { uiToSettings(); document.getElementById('settingsOverlay').classList.remove('open'); document.getElementById('settingsPanel').classList.remove('open'); }
+function fadeCanvas(dur) {
+  var snap = document.createElement('canvas');
+  snap.width = canvas.width; snap.height = canvas.height;
+  snap.getContext('2d').drawImage(canvas, 0, 0);
+  var start = performance.now();
+  dur = dur || 600;
+  function frame(now) {
+    var p = Math.min(1, (now - start) / dur);
+    var alpha = 1 - p;
+    ctx.clearRect(0, 0, cssW, cssH);
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(snap, 0, 0, cssW, cssH);
+    ctx.globalAlpha = 1;
+    if (p < 1) requestAnimationFrame(frame);
+    else ctx.clearRect(0, 0, cssW, cssH);
+  }
+  requestAnimationFrame(frame);
+}
+
+function openSettings() { settingsToUI(); document.getElementById('settingsOverlay').classList.add('open'); document.getElementById('settingsPanel').classList.add('open'); loadSystemFonts(); }
+function closeSettings() { uiToSettings(); document.getElementById('settingsOverlay').classList.remove('open'); document.getElementById('settingsPanel').classList.remove('open'); fadeCanvas(); }
 
 document.getElementById('btnSettings').addEventListener('click', openSettings);
 document.getElementById('btnClose').addEventListener('click', closeSettings);
