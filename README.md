@@ -59,6 +59,7 @@ riddle--/
 ├── .gitignore
 ├── README.md           # 中文说明（本文件）
 └── README_EN.md        # English version
+```
 
 ## 操作
 
@@ -83,9 +84,8 @@ riddle--/
 | 角色设定 | System Prompt |
 
 退出设置面板时，主画布预览内容会自动渐隐。
+
 ## 手写识别后端
-
-
 默认：**Google IME 手写识别 API**（内联自 [handwriting.js](https://github.com/ChenYuHo/handwriting.js)，MIT 协议）。
 
 接收笔画坐标数组，返回识别文字。支持语言：中文简/繁、英文、日文、韩文等 30+ 种。
@@ -96,6 +96,7 @@ riddle--/
 
 - **百度/腾讯手写 OCR** — 把笔画渲染成小图发 OCR API。不是笔画原生，但仍比 Vision LLM 便宜 20 倍。
 - **本地 ONNX 模型** — 训练/转换一个小型笔画序列分类器，用 ONNX Runtime Web 在浏览器内跑。零 API 调用。（远期规划）
+
 ## LLM 后端
 
 默认：**DeepSeek**（`deepseek-v4-flash`）。任何 OpenAI 兼容 API 都能用——改 `config.js` 即可。
