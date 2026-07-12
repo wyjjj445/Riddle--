@@ -14,7 +14,7 @@ A browser-based reimagining of [MaximeRivest/riddle](https://github.com/MaximeRi
 | **LLM for replies** | Same vision model (reads image, writes text) | **Pure text LLM** (DeepSeek / OpenAI-compatible) |
 | **Handwriting synthesis** | Font → Zhang-Suen skeletonization → stroke trace → animated replay | Canvas `fillText` + clip-reveal animation, centered layout |
 | **Customization** | Fixed font | Selectable font (presets + system fonts), size, speed |
-| **Setup** | Developer mode + SSH + AppLoad | `python -m http.server` |
+| **Setup** | Developer mode + SSH + AppLoad | Open index.html |
 | **Cost per interaction** | ~500–1000 vision tokens | ~50 text tokens (*~10–20× cheaper*) |
 | **Offline** | No (requires API) | No (requires API) |
 ## Why not Vision LLM?
