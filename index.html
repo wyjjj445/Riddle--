@@ -176,10 +176,8 @@ var FADE_DURATION = 1500;
 var S = { IDLE:'idle', WRITING:'writing', PENDING:'pending', RECOGNIZING:'recognizing', THINKING:'thinking', ANIMATING:'animating' };
 var state = S.IDLE;
 var strokes = [];
-var currentStroke = null;
+var activeStrokes = {};
 var idleTimer = null;
-var isDrawing = false;
-var lastPoint = null;
 var undoCount = 0;
 var cssW = 0, cssH = 0, dpr = 1;
 
@@ -202,35 +200,37 @@ function getPos(e) {
 canvas.addEventListener('pointerdown', function(e) {
   if (state === S.ANIMATING || state === S.THINKING) return;
   e.preventDefault();
-  isDrawing = true;
   var p = getPos(e);
-  currentStroke = { xs: [p.x], ys: [p.y], ts: [p.t] };
-  lastPoint = p;
+  activeStrokes[e.pointerId] = { xs: [p.x], ys: [p.y], ts: [p.t], lastPoint: p };
   clearIdleTimer();
   setState(S.WRITING);
   ctx.fillStyle = 'rgba(44,24,16,1)';
   ctx.beginPath(); ctx.arc(p.x, p.y, 1.5, 0, Math.PI*2); ctx.fill();
 });
 canvas.addEventListener('pointermove', function(e) {
-  if (!isDrawing) return;
+  var s = activeStrokes[e.pointerId];
+  if (!s) return;
   e.preventDefault();
   var p = getPos(e);
-  currentStroke.xs.push(p.x); currentStroke.ys.push(p.y); currentStroke.ts.push(p.t);
-  var speed = Math.hypot(p.x-lastPoint.x, p.y-lastPoint.y) / Math.max(1, p.t-lastPoint.t);
+  s.xs.push(p.x); s.ys.push(p.y); s.ts.push(p.t);
+  var speed = Math.hypot(p.x-s.lastPoint.x, p.y-s.lastPoint.y) / Math.max(1, p.t-s.lastPoint.t);
   var w = Math.max(1.5, 4 - speed * 0.3);
   ctx.strokeStyle = 'rgba(44,24,16,1)'; ctx.lineWidth = w;
-  ctx.beginPath(); ctx.moveTo(lastPoint.x, lastPoint.y); ctx.lineTo(p.x, p.y); ctx.stroke();
-  lastPoint = p;
+  ctx.beginPath(); ctx.moveTo(s.lastPoint.x, s.lastPoint.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+  s.lastPoint = p;
 });
 canvas.addEventListener('pointerup', endStroke);
 canvas.addEventListener('pointerleave', endStroke);
 function endStroke(e) {
-  if (!isDrawing) return;
-  if (e) e.preventDefault();
-  isDrawing = false;
-  if (currentStroke && currentStroke.xs.length > 0) { strokes.push(currentStroke); }
-  currentStroke = null; lastPoint = null;
-  startIdleTimer();
+  if (!e) return;
+  var s = activeStrokes[e.pointerId];
+  if (!s) return;
+  e.preventDefault();
+  delete activeStrokes[e.pointerId];
+  if (s.xs.length > 0) { strokes.push(s); }
+  if (Object.keys(activeStrokes).length === 0) {
+    startIdleTimer();
+  }
 }
 
 function redrawAll() {
