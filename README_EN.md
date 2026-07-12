@@ -45,6 +45,7 @@ cp config.example.js config.js
 python -m http.server
 
 # 4. Open http://localhost:8000 in browser
+```
 
 Settings can also be changed in-app (⚙ gear icon) and persist to localStorage.
 
