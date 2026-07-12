@@ -39,11 +39,7 @@ cp config.example.js config.js
 
 # 2. 编辑 config.js，填入 API Key
 #    （DeepSeek、OpenAI 或任何兼容服务）
-# 3. 启动本地服务器（避免 file:// 的 CORS 限制）
-python -m http.server
-
-# 4. 浏览器打开 http://localhost:8000
-```
+# 3. 双击 index.html 打开即可
 
 也可以在应用内点 ⚙ 修改设置，会存到 localStorage。
 

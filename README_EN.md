@@ -39,12 +39,7 @@ cp config.example.js config.js
 
 # 2. Edit config.js — add your API key
 #    (DeepSeek, OpenAI, or any compatible provider)
-
-# 3. Start a local server (avoids file:// CORS restrictions)
-python -m http.server
-
-# 4. Open http://localhost:8000 in browser
-```
+# 3. Open index.html directly
 
 Settings can also be changed in-app (⚙ gear icon) and persist to localStorage.
 
