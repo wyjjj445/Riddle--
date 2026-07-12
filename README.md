@@ -83,7 +83,7 @@ riddle--/
 | API Key / Base / Model | LLM 配置（config.js 值优先） |
 | 角色设定 | System Prompt |
 
-**实时预览：** 调整字体、字号或速度时，主画布会自动播放 "Hello 你好" 动画，即时感受效果变化。
+**实时预览：** 调整字体、字号或速度时，主画布会自动播放 "欢迎使用Riddle--\nWelcome to Riddle--" 动画，即时感受效果变化。
 
 退出设置面板时，主画布预览内容会自动渐隐。
 

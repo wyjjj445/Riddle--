@@ -12,8 +12,8 @@ A browser-based reimagining of [MaximeRivest/riddle](https://github.com/MaximeRi
 | **Pen input** | evdev, 4096-level pressure | Pointer events (mouse + touch) |
 | **Handwriting recognition** | Vision LLM (GPT-4o reads a PNG screenshot) | **Google IME stroke API** (sends coordinate arrays, not images) |
 | **LLM for replies** | Same vision model (reads image, writes text) | **Pure text LLM** (DeepSeek / OpenAI-compatible) |
-| **Handwriting synthesis** | Font → Zhang-Suen skeletonization → stroke trace → animated replay | Canvas `fillText` + clip-reveal animation |
-| **Memory / persistence** | Full page history on disk, past-page recall | None (v1; localStorage for settings) |
+| **Handwriting synthesis** | Font → Zhang-Suen skeletonization → stroke trace → animated replay | Canvas `fillText` + clip-reveal animation, centered layout |
+| **Customization** | Fixed font | Selectable font (presets + system fonts), size, speed |
 | **Setup** | Developer mode + SSH + AppLoad | `python -m http.server` |
 | **Offline** | Yes (pi backend) | No (requires API) |
 | **Cost per interaction** | ~500–1000 vision tokens | ~50 text tokens (*~10–20× cheaper*) |
@@ -41,8 +41,10 @@ cp config.example.js config.js
 # 2. Edit config.js — add your API key
 #    (DeepSeek, OpenAI, or any compatible provider)
 
-# 3. Double-click index.html to open
-```
+# 3. Start a local server (avoids file:// CORS restrictions)
+python -m http.server
+
+# 4. Open http://localhost:8000 in browser
 
 Settings can also be changed in-app (⚙ gear icon) and persist to localStorage.
 
@@ -58,14 +60,28 @@ riddle--/
 └── README.md
 ```
 
-## Gestures
+## Actions
 
 | Action | Result |
 |---|---|
-| Write, then rest 2.8s | Ink fades, diary replies |
+| Write, then rest 2.8s | User ink + old reply both fade out, diary replies |
 | Ctrl+Z or ↩ button | Undo last stroke |
 | ⚙ button | Open settings panel |
 | ▷ button (bottom-right) | Toggle debug log |
+
+## Settings
+
+Click ⚙ to adjust (auto-saved to localStorage):
+
+| Setting | Description |
+|---|---|
+| Handwriting language | 30+ languages (Chinese, English, Japanese, Korean, etc.) |
+| Reply font | 9 presets (Ma Shan Zheng, Caveat, KaiTi, etc.) + auto-load system fonts |
+| Font size | 20–48px (auto-scaled to fit canvas) |
+| Speed | `−` / `+` adjust per-character animation speed (50–500ms), live preview on main canvas |
+| API Key / Base / Model | LLM config (config.js values take priority) |
+| System Prompt | Role / personality |
+
 
 ## Handwriting recognition backend
 
@@ -82,7 +98,8 @@ The API accepts stroke coordinate arrays and returns recognized text. Supported 
 
 ## LLM backend
 
-Default: **DeepSeek** (`deepseek-chat`). Any OpenAI-compatible API works — just change `config.js`.
+Default: **DeepSeek** (`deepseek-v4-flash`). Any OpenAI-compatible API works — just change `config.js`.
+
 
 ## Credits
 
