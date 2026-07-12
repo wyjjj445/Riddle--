@@ -9,7 +9,7 @@ A browser-based reimagining of [MaximeRivest/riddle](https://github.com/MaximeRi
 | **Platform** | reMarkable Paper Pro (e-ink, aarch64) | Any browser (Windows / macOS / Linux / phone) |
 | **Language** | Rust + C/C++ | Single HTML file + vanilla JS |
 | **Display backend** | Direct e-ink engine (quill) or X11 (qtfb) | Canvas |
-| **Pen input** | evdev, 4096-level pressure | Pointer events (mouse + touch) |
+| **Pen input** | evdev, 4096 levels of pressure | Pointer events (mouse + multi-touch) |
 | **Handwriting recognition** | Vision LLM (GPT-4o reads a PNG screenshot) | **Google IME stroke API** (sends coordinate arrays, not images) |
 | **LLM for replies** | Same vision model (reads image, writes text) | **Pure text LLM** (DeepSeek / OpenAI-compatible) |
 | **Handwriting synthesis** | Font → Zhang-Suen skeletonization → stroke trace → animated replay | Canvas `fillText` + clip-reveal animation, centered layout |
@@ -64,7 +64,7 @@ riddle--/
 | Ctrl+Z or ↩ button | Undo last stroke |
 | ⚙ button | Open settings panel |
 | ▷ button (bottom-right) | Toggle debug log |
-
+| Multi-touch writing | Each finger tracks independently, no interference |
 ## Settings
 
 Click ⚙ to adjust (auto-saved to localStorage):
